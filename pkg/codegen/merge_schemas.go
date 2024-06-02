@@ -86,19 +86,14 @@ func mergeAllOf(allOf []*openapi3.SchemaRef) (openapi3.Schema, error) {
 // all of whose fields are composed.
 func mergeOpenapiSchemas(s1, s2 openapi3.Schema, allOf bool) (openapi3.Schema, error) {
 	var result openapi3.Schema
-	if s1.Extensions != nil || s2.Extensions != nil {
-		result.Extensions = make(map[string]interface{})
-		if s1.Extensions != nil {
-			for k, v := range s1.Extensions {
-				result.Extensions[k] = v
-			}
-		}
-		if s2.Extensions != nil {
-			for k, v := range s2.Extensions {
-				// TODO: Check for collisions
-				result.Extensions[k] = v
-			}
-		}
+
+	result.Extensions = make(map[string]interface{})
+	for k, v := range s1.Extensions {
+		result.Extensions[k] = v
+	}
+	for k, v := range s2.Extensions {
+		// TODO: Check for collisions
+		result.Extensions[k] = v
 	}
 
 	result.OneOf = append(s1.OneOf, s2.OneOf...)
@@ -209,14 +204,22 @@ func mergeOpenapiSchemas(s1, s2 openapi3.Schema, allOf bool) (openapi3.Schema, e
 		result.Properties[k] = v
 	}
 
-	if SchemaHasAdditionalProperties(&s1) && SchemaHasAdditionalProperties(&s2) {
-		return openapi3.Schema{}, errors.New("merging two schemas with additional properties, this is unhandled")
-	}
-	if s1.AdditionalProperties.Schema != nil {
-		result.AdditionalProperties.Schema = s1.AdditionalProperties.Schema
-	}
-	if s2.AdditionalProperties.Schema != nil {
-		result.AdditionalProperties.Schema = s2.AdditionalProperties.Schema
+	if isAdditionalPropertiesExplicitFalse(&s1) || isAdditionalPropertiesExplicitFalse(&s2) {
+		result.WithoutAdditionalProperties()
+	} else if s1.AdditionalProperties.Schema != nil {
+		if s2.AdditionalProperties.Schema != nil {
+			return openapi3.Schema{}, errors.New("merging two schemas with additional properties, this is unhandled")
+		} else {
+			result.AdditionalProperties.Schema = s1.AdditionalProperties.Schema
+		}
+	} else {
+		if s2.AdditionalProperties.Schema != nil {
+			result.AdditionalProperties.Schema = s2.AdditionalProperties.Schema
+		} else {
+			if s1.AdditionalProperties.Has != nil || s2.AdditionalProperties.Has != nil {
+				result.WithAnyAdditionalProperties()
+			}
+		}
 	}
 
 	// Allow discriminators for allOf merges, but disallow for one/anyOfs.
